@@ -1,45 +1,49 @@
 const { app, BrowserWindow, ipcMain, dialog } = require("electron");
-const fs = require("fs");
 const path = require("path");
+const fs = require("fs");
 
-function createWindow() {
-  const win = new BrowserWindow({
-    width: 800,
-    height: 600,
+let mainWindow;
+
+app.on("ready", () => {
+  mainWindow = new BrowserWindow({
+    width: 1200,
+    height: 800,
     webPreferences: {
-      preload: path.join(__dirname, "preload.js"),
+      preload: path.join(__dirname, "preload.js"), // preload used for ipc
+      contextIsolation: true,
+      sandbox: false, // allow Node.js in preload
     },
   });
 
-  win.loadFile("index.html");
+  mainWindow.loadFile("index.html");
+});
 
-  // Listen for devtools request
-  ipcMain.handle("openDevTools", () => {
-    win.webContents.openDevTools();
+// Handle open file
+ipcMain.handle("dialog:openFile", async () => {
+  const { canceled, filePaths } = await dialog.showOpenDialog({
+    properties: ["openFile"],
   });
+  if (canceled) return null;
 
-  // File open dialog
-  ipcMain.handle("dialog:openFile", async () => {
-    const { canceled, filePaths } = await dialog.showOpenDialog({
-      properties: ["openFile"],
-      filters: [{ name: "All Files", extensions: ["*"] }],
-    });
-    if (canceled || filePaths.length === 0) return null;
+  const content = fs.readFileSync(filePaths[0], "utf-8");
+  return { content, filePath: filePaths[0] };
+});
 
-    const content = fs.readFileSync(filePaths[0], "utf-8");
-    return { content, path: filePaths[0] };
+// Handle save file
+ipcMain.handle("dialog:saveFile", async (event, { content }) => {
+  const { filePath } = await dialog.showSaveDialog({});
+  if (!filePath) return null;
+
+  fs.writeFileSync(filePath, content, "utf-8");
+  return filePath;
+});
+
+// Handle open folder
+ipcMain.handle("dialog:openFolder", async () => {
+  const { canceled, filePaths } = await dialog.showOpenDialog({
+    properties: ["openDirectory"],
   });
+  if (canceled) return null;
 
-  // File save dialog
-  ipcMain.handle("dialog:saveFile", async (event, { content }) => {
-    const { canceled, filePath } = await dialog.showSaveDialog({
-      filters: [{ name: "All Files", extensions: ["*"] }],
-    });
-    if (canceled || !filePath) return null;
-
-    fs.writeFileSync(filePath, content, "utf-8");
-    return filePath;
-  });
-}
-
-app.whenReady().then(createWindow);
+  return filePaths[0];
+});
